@@ -64,7 +64,7 @@
 
 
 #define BLE_DEVICE_NAME                 "GPS Beacon Test"
-
+#define GPS_STRING_LENGTH               25
 
 #define APP_BLE_CONN_CFG_TAG            1                                  /**< A tag identifying the SoftDevice BLE configuration. */
 
@@ -92,6 +92,7 @@
 static ble_gap_adv_params_t m_adv_params;                                  /**< Parameters to be passed to the stack when starting advertising. */
 static uint8_t              m_adv_handle = BLE_GAP_ADV_SET_HANDLE_NOT_SET; /**< Advertising handle used to identify an advertising set. */
 static uint8_t              m_enc_advdata[BLE_GAP_ADV_SET_DATA_SIZE_MAX];  /**< Buffer for storing an encoded advertising set. */
+static uint8_t              m_enc_advscan[BLE_GAP_ADV_SET_DATA_SIZE_MAX];  /**< Buffer for storing an encoded advertising set. */
 
 /**@brief Struct that contains pointers to the encoded advertising data. */
 static ble_gap_adv_data_t m_adv_data =
@@ -103,8 +104,8 @@ static ble_gap_adv_data_t m_adv_data =
     },
     .scan_rsp_data =
     {
-        .p_data = NULL,
-        .len    = 0
+        .p_data = m_enc_advscan,
+        .len    = BLE_GAP_ADV_SET_DATA_SIZE_MAX
 
     }
 };
@@ -121,6 +122,35 @@ static uint8_t m_beacon_info[APP_BEACON_INFO_LENGTH] =                    /**< I
     APP_MINOR_VALUE,     // Minor arbitrary value that can be used to distinguish between Beacons.
     APP_MEASURED_RSSI    // Manufacturer specific information. The Beacon's measured TX power in
                          // this implementation.
+};
+
+static uint8_t gps_string[GPS_STRING_LENGTH] =
+{
+  0x35,
+  0x39,
+  0x2a,
+  0x32,
+  0x36,
+  0x27,
+  0x31,
+  0x32,
+  0x2e,
+  0x36,
+  0x22,
+  0x4e,
+  0x20,
+  0x32,
+  0x34,
+  0x2a,
+  0x34,
+  0x34,
+  0x27,
+  0x33,
+  0x34,
+  0x2e,
+  0x30,
+  0x22,
+  0x45
 };
 
 /**@brief Callback function for asserts in the SoftDevice.
@@ -147,7 +177,7 @@ void assert_nrf_callback(uint16_t line_num, const uint8_t * p_file_name)
 static void advertising_init(void)
 {
     uint32_t      err_code;
-    ble_advdata_t advdata;
+    ble_advdata_t advdata, advscan;
     uint8_t       flags = BLE_GAP_ADV_FLAG_BR_EDR_NOT_SUPPORTED;
 
     ble_advdata_manuf_data_t manuf_specific_data;
@@ -177,8 +207,8 @@ static void advertising_init(void)
     m_beacon_info[index++] = LSB_16(minor_value);
 #endif
 
-    manuf_specific_data.data.p_data = (uint8_t *) m_beacon_info;
-    manuf_specific_data.data.size   = APP_BEACON_INFO_LENGTH;
+    manuf_specific_data.data.p_data = (uint8_t *) gps_string;
+    manuf_specific_data.data.size   = GPS_STRING_LENGTH;
 
     // Set device name and connection security mode
     BLE_GAP_CONN_SEC_MODE_SET_OPEN(&gap_sec_mode);
@@ -188,21 +218,27 @@ static void advertising_init(void)
 
     // Build and set advertising data.
     memset(&advdata, 0, sizeof(advdata));
+    memset(&advscan, 0, sizeof(advscan));
 
     advdata.name_type             = BLE_ADVDATA_FULL_NAME;
     advdata.flags                 = flags;
     //advdata.p_manuf_specific_data = &manuf_specific_data;
 
+    advscan.p_manuf_specific_data = &manuf_specific_data;
+
     // Initialize advertising parameters (used when starting advertising).
     memset(&m_adv_params, 0, sizeof(m_adv_params));
 
-    m_adv_params.properties.type = BLE_GAP_ADV_TYPE_NONCONNECTABLE_NONSCANNABLE_UNDIRECTED;
+    m_adv_params.properties.type = BLE_GAP_ADV_TYPE_NONCONNECTABLE_SCANNABLE_UNDIRECTED;
     m_adv_params.p_peer_addr     = NULL;    // Undirected advertisement.
     m_adv_params.filter_policy   = BLE_GAP_ADV_FP_ANY;
     m_adv_params.interval        = NON_CONNECTABLE_ADV_INTERVAL;
     m_adv_params.duration        = 0;       // Never time out.
 
     err_code = ble_advdata_encode(&advdata, m_adv_data.adv_data.p_data, &m_adv_data.adv_data.len);
+    APP_ERROR_CHECK(err_code);
+
+    err_code = ble_advdata_encode(&advscan, m_adv_data.scan_rsp_data.p_data, &m_adv_data.scan_rsp_data.len);
     APP_ERROR_CHECK(err_code);
 
     err_code = sd_ble_gap_adv_set_configure(&m_adv_handle, &m_adv_data, &m_adv_params);
