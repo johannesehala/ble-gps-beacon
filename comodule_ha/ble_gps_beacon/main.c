@@ -63,6 +63,9 @@
 #include "nrf_log_default_backends.h"
 
 
+#define BLE_DEVICE_NAME                 "GPS Beacon Test"
+
+
 #define APP_BLE_CONN_CFG_TAG            1                                  /**< A tag identifying the SoftDevice BLE configuration. */
 
 #define NON_CONNECTABLE_ADV_INTERVAL    MSEC_TO_UNITS(100, UNIT_0_625_MS)  /**< The advertising interval for non-connectable advertisement (100 ms). This value can vary between 100ms to 10.24s). */
@@ -120,7 +123,6 @@ static uint8_t m_beacon_info[APP_BEACON_INFO_LENGTH] =                    /**< I
                          // this implementation.
 };
 
-
 /**@brief Callback function for asserts in the SoftDevice.
  *
  * @details This function will be called in case of an assert in the SoftDevice.
@@ -149,6 +151,7 @@ static void advertising_init(void)
     uint8_t       flags = BLE_GAP_ADV_FLAG_BR_EDR_NOT_SUPPORTED;
 
     ble_advdata_manuf_data_t manuf_specific_data;
+    ble_gap_conn_sec_mode_t gap_sec_mode;
 
     manuf_specific_data.company_identifier = APP_COMPANY_IDENTIFIER;
 
@@ -177,12 +180,18 @@ static void advertising_init(void)
     manuf_specific_data.data.p_data = (uint8_t *) m_beacon_info;
     manuf_specific_data.data.size   = APP_BEACON_INFO_LENGTH;
 
+    // Set device name and connection security mode
+    BLE_GAP_CONN_SEC_MODE_SET_OPEN(&gap_sec_mode);
+    
+    err_code = sd_ble_gap_device_name_set(&gap_sec_mode, (const uint8_t *)BLE_DEVICE_NAME, strlen(BLE_DEVICE_NAME));
+    APP_ERROR_CHECK(err_code);
+
     // Build and set advertising data.
     memset(&advdata, 0, sizeof(advdata));
 
-    advdata.name_type             = BLE_ADVDATA_NO_NAME;
+    advdata.name_type             = BLE_ADVDATA_FULL_NAME;
     advdata.flags                 = flags;
-    advdata.p_manuf_specific_data = &manuf_specific_data;
+    //advdata.p_manuf_specific_data = &manuf_specific_data;
 
     // Initialize advertising parameters (used when starting advertising).
     memset(&m_adv_params, 0, sizeof(m_adv_params));
