@@ -57,6 +57,7 @@
 #include "ble_advdata.h"
 #include "app_timer.h"
 #include "nrf_pwr_mgmt.h"
+#include "nrf_delay.h"
 
 #include "nrf_log.h"
 #include "nrf_log_ctrl.h"
@@ -91,20 +92,38 @@
 
 static ble_gap_adv_params_t m_adv_params;                                  /**< Parameters to be passed to the stack when starting advertising. */
 static uint8_t              m_adv_handle = BLE_GAP_ADV_SET_HANDLE_NOT_SET; /**< Advertising handle used to identify an advertising set. */
-static uint8_t              m_enc_advdata[BLE_GAP_ADV_SET_DATA_SIZE_MAX];  /**< Buffer for storing an encoded advertising set. */
-static uint8_t              m_enc_advscan[BLE_GAP_ADV_SET_DATA_SIZE_MAX];  /**< Buffer for storing an encoded advertising set. */
+static uint8_t              m_enc_advdata_ping[BLE_GAP_ADV_SET_DATA_SIZE_MAX];  /**< Buffer for storing an encoded advertising set. */
+static uint8_t              m_enc_advscan_ping[BLE_GAP_ADV_SET_DATA_SIZE_MAX];  /**< Buffer for storing an encoded advertising set. */
+static uint8_t              m_enc_advdata_pong[BLE_GAP_ADV_SET_DATA_SIZE_MAX];  /**< Buffer for storing an encoded advertising set. */
+static uint8_t              m_enc_advscan_pong[BLE_GAP_ADV_SET_DATA_SIZE_MAX];  /**< Buffer for storing an encoded advertising set. */
 
 /**@brief Struct that contains pointers to the encoded advertising data. */
-static ble_gap_adv_data_t m_adv_data =
+static ble_gap_adv_data_t m_adv_data_ping =
 {
     .adv_data =
     {
-        .p_data = m_enc_advdata,
+        .p_data = m_enc_advdata_ping,
         .len    = BLE_GAP_ADV_SET_DATA_SIZE_MAX
     },
     .scan_rsp_data =
     {
-        .p_data = m_enc_advscan,
+        .p_data = m_enc_advscan_ping,
+        .len    = BLE_GAP_ADV_SET_DATA_SIZE_MAX
+
+    }
+};
+
+/**@brief Struct that contains pointers to the encoded advertising data. */
+static ble_gap_adv_data_t m_adv_data_pong =
+{
+    .adv_data =
+    {
+        .p_data = m_enc_advdata_pong,
+        .len    = BLE_GAP_ADV_SET_DATA_SIZE_MAX
+    },
+    .scan_rsp_data =
+    {
+        .p_data = m_enc_advscan_pong,
         .len    = BLE_GAP_ADV_SET_DATA_SIZE_MAX
 
     }
@@ -153,6 +172,35 @@ static uint8_t gps_string[GPS_STRING_LENGTH] =
   0x45
 };
 
+static uint8_t gps_string_2[GPS_STRING_LENGTH] =
+{
+  0x32,
+  0x36,
+  0x2a,
+  0x31,
+  0x32,
+  0x27,
+  0x30,
+  0x35,
+  0x2e,
+  0x34,
+  0x22,
+  0x53,
+  0x20,
+  0x32,
+  0x38,
+  0x2a,
+  0x30,
+  0x31,
+  0x27,
+  0x35,
+  0x32,
+  0x2e,
+  0x37,
+  0x22,
+  0x45
+};
+
 /**@brief Callback function for asserts in the SoftDevice.
  *
  * @details This function will be called in case of an assert in the SoftDevice.
@@ -174,7 +222,7 @@ void assert_nrf_callback(uint16_t line_num, const uint8_t * p_file_name)
  * @details Encodes the required advertising data and passes it to the stack.
  *          Also builds a structure to be passed to the stack when starting advertising.
  */
-static void advertising_init(void)
+static bool advertising_init(void)
 {
     uint32_t      err_code;
     ble_advdata_t advdata, advscan;
@@ -235,14 +283,20 @@ static void advertising_init(void)
     m_adv_params.interval        = NON_CONNECTABLE_ADV_INTERVAL;
     m_adv_params.duration        = 0;       // Never time out.
 
-    err_code = ble_advdata_encode(&advdata, m_adv_data.adv_data.p_data, &m_adv_data.adv_data.len);
+    err_code = ble_advdata_encode(&advdata, m_adv_data_ping.adv_data.p_data, &m_adv_data_ping.adv_data.len);
     APP_ERROR_CHECK(err_code);
 
-    err_code = ble_advdata_encode(&advscan, m_adv_data.scan_rsp_data.p_data, &m_adv_data.scan_rsp_data.len);
+    // Also encode adv data for pong, cuz this is static.
+    err_code = ble_advdata_encode(&advdata, m_adv_data_pong.adv_data.p_data, &m_adv_data_pong.adv_data.len);
     APP_ERROR_CHECK(err_code);
 
-    err_code = sd_ble_gap_adv_set_configure(&m_adv_handle, &m_adv_data, &m_adv_params);
+    err_code = ble_advdata_encode(&advscan, m_adv_data_ping.scan_rsp_data.p_data, &m_adv_data_ping.scan_rsp_data.len);
     APP_ERROR_CHECK(err_code);
+
+    err_code = sd_ble_gap_adv_set_configure(&m_adv_handle, &m_adv_data_ping, &m_adv_params);
+    APP_ERROR_CHECK(err_code);
+
+    return true; //Pong is available, cuz ping was used.
 }
 
 
@@ -322,12 +376,56 @@ static void power_management_init(void)
  *
  * @details If there is no pending log operation, then sleep until next the next event occurs.
  */
-static void idle_state_handle(void)
+static void idle_state_handle(bool p)
 {
-    if (NRF_LOG_PROCESS() == false)
+  bool pong = p; //Indicates if pong is available or not
+  uint32_t err_code;
+  ble_advdata_t advscan;
+  ble_advdata_manuf_data_t manuf_specific_data;
+
+  manuf_specific_data.company_identifier = APP_COMPANY_IDENTIFIER;
+
+  for(;;)
+  {
+    nrf_delay_ms(2000);
+    if(pong)
     {
-        nrf_pwr_mgmt_run();
+      manuf_specific_data.data.p_data = (uint8_t *) gps_string;
+      manuf_specific_data.data.size   = GPS_STRING_LENGTH;
+
+      memset(&advscan, 0, sizeof(advscan));
+      advscan.p_manuf_specific_data = &manuf_specific_data;
+
+      err_code = ble_advdata_encode(&advscan, m_adv_data_pong.scan_rsp_data.p_data, &m_adv_data_pong.scan_rsp_data.len);
+      APP_ERROR_CHECK(err_code);
+
+      err_code = sd_ble_gap_adv_set_configure(&m_adv_handle, &m_adv_data_pong, NULL);
+      APP_ERROR_CHECK(err_code);
+
+      pong = false;
     }
+    else //must be ping
+    {
+      manuf_specific_data.data.p_data = (uint8_t *) gps_string_2;
+      manuf_specific_data.data.size   = GPS_STRING_LENGTH;
+
+      memset(&advscan, 0, sizeof(advscan));
+      advscan.p_manuf_specific_data = &manuf_specific_data;
+
+      err_code = ble_advdata_encode(&advscan, m_adv_data_ping.scan_rsp_data.p_data, &m_adv_data_ping.scan_rsp_data.len);
+      APP_ERROR_CHECK(err_code);
+
+      err_code = sd_ble_gap_adv_set_configure(&m_adv_handle, &m_adv_data_ping, NULL);
+      APP_ERROR_CHECK(err_code);
+
+      pong = true;
+    }
+
+  }
+    //if (NRF_LOG_PROCESS() == false)
+    //{
+    //    nrf_pwr_mgmt_run();
+    //}
 }
 
 
@@ -336,13 +434,14 @@ static void idle_state_handle(void)
  */
 int main(void)
 {
+    bool pong; //Indicates if pong is available or not
     // Initialize.
     log_init();
     timers_init();
     leds_init();
     power_management_init();
     ble_stack_init();
-    advertising_init();
+    pong = advertising_init();
 
     // Start execution.
     NRF_LOG_INFO("Beacon example started.");
@@ -351,7 +450,7 @@ int main(void)
     // Enter main loop.
     for (;; )
     {
-        idle_state_handle();
+        idle_state_handle(pong);
     }
 }
 
