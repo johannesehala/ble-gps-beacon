@@ -62,10 +62,11 @@
 #include "nrf_log.h"
 #include "nrf_log_ctrl.h"
 #include "nrf_log_default_backends.h"
-
+#include "SEGGER_RTT.h"
 
 #define BLE_DEVICE_NAME                 "GPS Beacon Test"
-#define GPS_STRING_LENGTH               25
+#define HC_GPS_STRING_LENGTH            25
+#define MAX_GPS_STRING_LENGTH           26
 
 #define APP_BLE_CONN_CFG_TAG            1                                  /**< A tag identifying the SoftDevice BLE configuration. */
 
@@ -143,7 +144,7 @@ static uint8_t m_beacon_info[APP_BEACON_INFO_LENGTH] =                    /**< I
                          // this implementation.
 };
 
-static uint8_t gps_string[GPS_STRING_LENGTH] =
+static uint8_t gps_string[HC_GPS_STRING_LENGTH] =
 {
   0x35,
   0x39,
@@ -172,7 +173,7 @@ static uint8_t gps_string[GPS_STRING_LENGTH] =
   0x45
 };
 
-static uint8_t gps_string_2[GPS_STRING_LENGTH] =
+static uint8_t gps_string_2[HC_GPS_STRING_LENGTH] =
 {
   0x32,
   0x36,
@@ -200,6 +201,7 @@ static uint8_t gps_string_2[GPS_STRING_LENGTH] =
   0x22,
   0x45
 };
+static uint8_t user_string[MAX_GPS_STRING_LENGTH]; //Max possible GPS characters is 26 for format 36°06'46.8"N 115°10'23.2"W
 
 /**@brief Callback function for asserts in the SoftDevice.
  *
@@ -256,7 +258,7 @@ static bool advertising_init(void)
 #endif
 
     manuf_specific_data.data.p_data = (uint8_t *) gps_string;
-    manuf_specific_data.data.size   = GPS_STRING_LENGTH;
+    manuf_specific_data.data.size   = HC_GPS_STRING_LENGTH;
 
     // Set device name and connection security mode
     BLE_GAP_CONN_SEC_MODE_SET_OPEN(&gap_sec_mode);
@@ -378,54 +380,70 @@ static void power_management_init(void)
  */
 static void idle_state_handle(bool p)
 {
+  uint32_t i;
   bool pong = p; //Indicates if pong is available or not
   uint32_t err_code;
+  char c;
   ble_advdata_t advscan;
   ble_advdata_manuf_data_t manuf_specific_data;
 
   manuf_specific_data.company_identifier = APP_COMPANY_IDENTIFIER;
-
+  manuf_specific_data.data.p_data = (uint8_t *) user_string;
+  
+  SEGGER_RTT_WriteString(0, "A - start token, indicates beginning of new string.\n");
+  SEGGER_RTT_WriteString(0, "B - end token, indicates end of string.\n");
+  SEGGER_RTT_WriteString(0, "Max string length is 26 characters.\n");
+  SEGGER_RTT_WriteString(0, "Characters are accepted until buffer is full (26 bytes) or B is received\n");
+  SEGGER_RTT_WriteString(0, "Accepts most UTF8 characters.\n");
+  SEGGER_RTT_WriteString(0, "Suggested GPS format - 36*06'46.8\"N 115*10'23.2\"W\n");
+  
   for(;;)
   {
-    nrf_delay_ms(2000);
-    if(pong)
+    c = SEGGER_RTT_WaitKey(); // will block until data is available
+    if(c == 'A')
     {
-      manuf_specific_data.data.p_data = (uint8_t *) gps_string;
-      manuf_specific_data.data.size   = GPS_STRING_LENGTH;
+      SEGGER_RTT_WriteString(0, "\n\nStarted receiving..\n\n");
+      i=0;
+      while(i < 26 && c != 'B')
+      {
+        c = SEGGER_RTT_WaitKey(); // will block until data is available
+        if(c >= 0x20 && c <= 0x7e)user_string[i++] = c;
+      }
+      SEGGER_RTT_printf(0, "\n\nString received. Len: %d\n",i);
+    
+      // Encode and publish.
+      if(c == 'B')manuf_specific_data.data.size = i-1;
+      else manuf_specific_data.data.size = i;
 
-      memset(&advscan, 0, sizeof(advscan));
-      advscan.p_manuf_specific_data = &manuf_specific_data;
+      if(pong)
+      {
+        memset(&advscan, 0, sizeof(advscan));
+        advscan.p_manuf_specific_data = &manuf_specific_data;
 
-      err_code = ble_advdata_encode(&advscan, m_adv_data_pong.scan_rsp_data.p_data, &m_adv_data_pong.scan_rsp_data.len);
-      APP_ERROR_CHECK(err_code);
+        err_code = ble_advdata_encode(&advscan, m_adv_data_pong.scan_rsp_data.p_data, &m_adv_data_pong.scan_rsp_data.len);
+        APP_ERROR_CHECK(err_code);
 
-      err_code = sd_ble_gap_adv_set_configure(&m_adv_handle, &m_adv_data_pong, NULL);
-      APP_ERROR_CHECK(err_code);
+        err_code = sd_ble_gap_adv_set_configure(&m_adv_handle, &m_adv_data_pong, NULL);
+        APP_ERROR_CHECK(err_code);
 
-      pong = false;
+        pong = false;
+      }
+      else //must be ping
+      {
+        memset(&advscan, 0, sizeof(advscan));
+        advscan.p_manuf_specific_data = &manuf_specific_data;
+
+        err_code = ble_advdata_encode(&advscan, m_adv_data_ping.scan_rsp_data.p_data, &m_adv_data_ping.scan_rsp_data.len);
+        APP_ERROR_CHECK(err_code);
+
+        err_code = sd_ble_gap_adv_set_configure(&m_adv_handle, &m_adv_data_ping, NULL);
+        APP_ERROR_CHECK(err_code);
+
+        pong = true;
+      }
+      nrf_delay_ms(500); // Wait a little
     }
-    else //must be ping
-    {
-      manuf_specific_data.data.p_data = (uint8_t *) gps_string_2;
-      manuf_specific_data.data.size   = GPS_STRING_LENGTH;
-
-      memset(&advscan, 0, sizeof(advscan));
-      advscan.p_manuf_specific_data = &manuf_specific_data;
-
-      err_code = ble_advdata_encode(&advscan, m_adv_data_ping.scan_rsp_data.p_data, &m_adv_data_ping.scan_rsp_data.len);
-      APP_ERROR_CHECK(err_code);
-
-      err_code = sd_ble_gap_adv_set_configure(&m_adv_handle, &m_adv_data_ping, NULL);
-      APP_ERROR_CHECK(err_code);
-
-      pong = true;
-    }
-
   }
-    //if (NRF_LOG_PROCESS() == false)
-    //{
-    //    nrf_pwr_mgmt_run();
-    //}
 }
 
 
