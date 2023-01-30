@@ -420,6 +420,7 @@ static void idle_state_handle(bool p)
         memset(&advscan, 0, sizeof(advscan));
         advscan.p_manuf_specific_data = &manuf_specific_data;
 
+        m_adv_data_pong.scan_rsp_data.len = BLE_GAP_ADV_SET_DATA_SIZE_MAX;
         err_code = ble_advdata_encode(&advscan, m_adv_data_pong.scan_rsp_data.p_data, &m_adv_data_pong.scan_rsp_data.len);
         APP_ERROR_CHECK(err_code);
 
@@ -433,6 +434,7 @@ static void idle_state_handle(bool p)
         memset(&advscan, 0, sizeof(advscan));
         advscan.p_manuf_specific_data = &manuf_specific_data;
 
+        m_adv_data_ping.scan_rsp_data.len = BLE_GAP_ADV_SET_DATA_SIZE_MAX;
         err_code = ble_advdata_encode(&advscan, m_adv_data_ping.scan_rsp_data.p_data, &m_adv_data_ping.scan_rsp_data.len);
         APP_ERROR_CHECK(err_code);
 
