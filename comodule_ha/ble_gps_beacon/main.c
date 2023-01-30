@@ -395,6 +395,7 @@ static void idle_state_handle(bool p)
   SEGGER_RTT_WriteString(0, "Max string length is 26 characters.\n");
   SEGGER_RTT_WriteString(0, "Characters are accepted until buffer is full (26 bytes) or B is received\n");
   SEGGER_RTT_WriteString(0, "Accepts most UTF8 characters.\n");
+  SEGGER_RTT_WriteString(0, "Copy-paste works up to 15 characters, the rest is dropped, program not fast enough.\n");
   SEGGER_RTT_WriteString(0, "Suggested GPS format - 36*06'46.8\"N 115*10'23.2\"W\n");
   
   for(;;)

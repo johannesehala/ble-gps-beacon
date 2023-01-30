@@ -18,6 +18,7 @@ https://www.nordicsemi.com/Products/Development-software/nRF5-SDK/Download#infot
    - Max string length is 26 characters.
    - Characters are accepted until buffer is full (26 bytes) or B is received. Only then is the string transmitted as advertising data.
    - Accepts most UTF8 characters.
+   - Copy-paste works up to 15 characters, the rest is dropped, program not fast enough.
    - Suggested GPS format - 36*06'46.8"N 115*10'23.2"W
 - In nRF Connect App change the manufacturer data display coding to UTF8.
 
